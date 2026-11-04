@@ -1,0 +1,4 @@
+# Only the images are published; everything else stays on this PC.
+/*
+!/images/
+!/.gitignore
