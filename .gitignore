@@ -1,4 +1,5 @@
-# Only the images are published; everything else stays on this PC.
+# Only the images and the online maker page are published; everything else stays on this PC.
 /*
 !/images/
+!/maker/
 !/.gitignore
