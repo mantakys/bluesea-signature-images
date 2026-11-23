@@ -64,6 +64,7 @@
         <button type="button" id="dlTxt" class="ghost">Plain-text version (.txt)</button>
         <button type="button" id="clear" class="ghost">Clear</button>
         <button type="button" id="showOnly" class="ghost">Show signature only (for iPhone)</button>
+        <button type="button" id="iphone" class="ghost">Add to Mail app (iPhone)</button>
       </div>
       <div class="status" id="status"></div>
 
@@ -71,7 +72,7 @@
         <li>Leave every field empty to download the editable template (placeholders), for people who will type their own details in Outlook.</li>
         <li>The file is named after the person. That name is what they will see in Outlook's signature list.</li>
         <li>Nothing typed here is saved or sent anywhere.</li>
-        <li>iPhone Mail: tap <b>Show signature only</b>, select it all, copy, paste into Settings &rarr; Apps &rarr; Mail &rarr; Signature, then shake (or swipe left with three fingers) and tap <b>Undo</b> to keep the styling.</li>
+        <li>iPhone Mail: tap <b>Add to Mail app (iPhone)</b>, select it all, copy, paste into Settings &rarr; Apps &rarr; Mail &rarr; Signature, then shake (or swipe left with three fingers) and tap <b>Undo</b> to keep the styling. Same look as the Outlook version, but every line's colour and font is written three times, so iPhone Mail can't drop it (text no longer turns black/white in sent emails or in dark mode).</li>
         <li>Wide 1:1: phones zoom it out evenly (about 58% on a 375px phone), so the layout never changes and no app enlarges the text. Drag the preview box (or use the buttons) to check. Nothing in it can be removed by Outlook, so it looks the same from every sender.</li>
       </ol>
     </div>
@@ -160,15 +161,55 @@
 
   // Shows just the signature on a plain page, so it can be selected and copied on a phone (e.g. Safari on iPhone).
   // Copying from this page keeps the images as normal web links; copying from a received email does not.
-  $("showOnly").addEventListener("click", function () {
+  function showSignatureOnly(sig, label) {
     var bar = '<div id="bar" style="font:14px Arial,sans-serif;background:#eef3f6;color:#22313a;padding:12px 16px;margin:0 0 24px;line-height:1.5">' +
-      '<b>Signature only.</b> Press and hold on the name, tap <b>Select All</b>, then <b>Copy</b>. ' +
+      '<b>' + label + '</b> Press and hold on the name, tap <b>Select All</b>, then <b>Copy</b>. ' +
       '<a href="' + location.pathname + '" style="color:#4f8fb6">&larr; Back to the maker</a></div>';
     var page = '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
-      '<title>' + (values().name || "Blue Sea signature") + '</title>' + (build().match(/<style>[\s\S]*?<\/style>/) || [""])[0] + '</head><body style="margin:0;padding:0;background:#fff">' + bar +
-      '<div id="sig" style="padding:0 16px 24px">' + build().replace(/^[\s\S]*<body[^>]*>/, "").replace(/<\/body>[\s\S]*$/, "") + '</div></body></html>';
+      '<title>' + esc(values().name || "Blue Sea signature") + '</title>' + (sig.match(/<style>[\s\S]*?<\/style>/) || [""])[0] + '</head><body style="margin:0;padding:0;background:#fff">' + bar +
+      '<div id="sig" style="padding:0 16px 24px">' + sig.replace(/^[\s\S]*<body[^>]*>/, "").replace(/<\/body>[\s\S]*$/, "") + '</div></body></html>';
     document.open(); document.write(page); document.close();
-  });
+  }
+  $("showOnly").addEventListener("click", function () { showSignatureOnly(build(), "Signature only."); });
+
+  // iPhone Mail version: same design, but each text line's font and colour is written three times
+  // (on its cell, on the line, and around the words as <font> + <span>), and again inside every text link.
+  // iPhone Mail rewrites a pasted signature and drops some of the line-level styles; the lines it drops then show
+  // black in Outlook classic and black/white (dark mode) in iPhone Mail. With the extra layers something always survives.
+  function parseStyle(s) {
+    var m = {};
+    (s || "").split(";").forEach(function (d) { var i = d.indexOf(":"); if (i > 0) m[d.slice(0, i).trim().toLowerCase()] = d.slice(i + 1).trim(); });
+    return m;
+  }
+  function iphoneSafe(html) {
+    var doc = new DOMParser().parseFromString(html, "text/html");
+    var KEEP = ["font-family", "font-size", "line-height", "color"];
+    [].forEach.call(doc.body.querySelectorAll("p"), function (p) {
+      var st = parseStyle(p.getAttribute("style"));
+      if (!st.color && !st["font-family"]) return;                       // image-only lines
+      var css = KEEP.filter(function (k) { return st[k]; }).map(function (k) { return k + ":" + st[k]; }).join("; ");
+      var td = p.parentNode && p.parentNode.closest ? p.parentNode.closest("td") : null;
+      if (td) td.setAttribute("style", (td.getAttribute("style") || "").replace(/;?\s*$/, "; ") + css + ";");
+      var font = doc.createElement("font");
+      if (st["font-family"]) font.setAttribute("face", st["font-family"].replace(/['"]/g, ""));
+      if (st.color) font.setAttribute("color", st.color);
+      var span = doc.createElement("span"); span.setAttribute("style", css + ";");
+      while (p.firstChild) span.appendChild(p.firstChild);
+      font.appendChild(span); p.appendChild(font);
+    });
+    [].forEach.call(doc.body.querySelectorAll("a"), function (a) {
+      if (a.querySelector("img")) return;                                // logo/icon links have no text
+      var st = parseStyle(a.getAttribute("style"));
+      if (!st.color) return;
+      var font = doc.createElement("font"); font.setAttribute("color", st.color);
+      var span = doc.createElement("span");
+      span.setAttribute("style", "color:" + st.color + "; text-decoration:" + (st["text-decoration"] || "none") + ";");
+      while (a.firstChild) span.appendChild(a.firstChild);
+      font.appendChild(span); a.appendChild(font);
+    });
+    return "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
+  }
+  $("iphone").addEventListener("click", function () { showSignatureOnly(iphoneSafe(build()), "For the iPhone Mail app."); });
   // --- Resizable "screen" box with a scaled preview ---------------------------------------
   // The signature always renders at its real size (SIG px wide). When the box (the "screen") is narrower,
   // the preview is shrunk to fit, the way phone mail apps shrink a fixed-width email: same layout, just smaller.
